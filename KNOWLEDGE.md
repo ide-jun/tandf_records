@@ -19,6 +19,7 @@
 1. データベースと接続し、データベースのレコードとActiveRecordオブジェクトを結びつける役割
 2. ビジネスロックの実装的な振る舞いに関する、バリデーションやレコード保存などに実行する様々なコールバックなどを実行する役割
 ---
+# モデリング基礎知識
 ## CRUD操作との対応表
 | 動詞 | 具体的な内容 | ActiveRecordの対応するメソッド |
 | ---- | ---- | ---- |
@@ -108,3 +109,115 @@ class Authors < ApplicationRecord
   has_many :books, through: :book_authors
 end
 ```
+
+### バリデージョン一覧
+| バリデーション名 | 内容 |
+| ---- | ---- |
+| `validates_associated` | 関連先のレコードがvalidであること |
+| `confirmation` | emailなどのように、確認フィールドと内容が一致する事 |
+| `exclusion` | ある値が含まれていない事 |
+| `format` | あるフォーマットを満たす事 |
+| `inclusion` | ある値がふくまれている事 |
+| `length` | 最長や最短など、ある長さを満たす事 |
+| `numericality` | 数値であること、オプションでゼロ以上、偶数かなどを検査する |
+| `presence` | 値が空でない事 |
+| `absence` | 値が空である事 |
+| `uniqueness` | 値が一意である事。scopeオプションで一意性の範囲を指定する。 |
+
+## `Active::Record::Enum`で列挙型
+例
+```Ruby
+enum sales_status: {
+        reservation: 0, # 予約受付
+        now_on_sale: 1, # 販売中
+        end_of_print: 2, # 販売終了
+    }
+```
+### Enumで定義された状態の確認
+ステータスごとに述語メソッドで状態を問い合わせることが可能。
+```Ruby
+book.now_on_sale?
+book.end_of_print?
+```
+enumの値の末尾に「!」付きのメソッドを使うと、そのenum値へ更新する。
+```Ruby
+book.now_on_sale!
+book.end_of_print!
+```
+enumで定義したカラム（`sales_status`）を直接参照すると文字列の値が取得可能。DBに保存されている実際の値を確認するには`カラム名_before_type_cast`というメソッドを呼び出す。
+```Ruby
+book.sales_status
+=> "end_of_print"
+book.sales_status_before_type_cast
+=> 2
+```
+enumで定義していない値を保存しようとすると `ArgumentError` が発生し、保存に失敗する。
+
+### Enumを導入すると利用できるScope
+enum型の名称で検索するためのscopeも追加される。該当するenum名で検索するscope(`.enum名`)、該当enum名を含まない検索scope(`.not_enum名`)
+
+### 補足
+Rails4.1から`ActivateRecord::Enum`というEnum機能が導入。それ以前は`enumerize`が利用されていた。
+
+(enumerize)[https://github.com/brainspec/enumerize]
+
+これを利用するとより高機能なEnum機能を利用できる。
+enum定義に対応するscopeの名称をより柔軟に定義可能であったり
+値からenum名を取得するメソッドが用意されているなど。
+複雑な使い方をする場合にはこちらを利用する。
+
+# コントローラの役割
+## ルーティングからコントローラとアクションの決定法
+`http://localhost:3000/books/1`というURLへのアクセスを考える。
+この時アクセスしたパスは「`/books/1`」である。
+このようなルーティングの設定は「`config/routes.rb`」というファイルに定義される。
+```Ruby:config/routes.rb
+Rails.application.routes.draw do
+  get "books/:id" => "books#show"
+end
+```
+これでGETメソッドで`/books/:id`というパターンにマッチするパスへアクセスした時に、「Booksコントローラのshowアクション」を実行するという定義になる。
+
+---
+## showアクションの中身
+Railsのジェネレータを使用してBooksコントローラのひな型を作成する。
+```cmd:cmd
+rails g controller books
+```
+showメソッドを`app/controllers/books_controller.rb`に作成する。
+```Ruby:app/controllers/books_controller.rb
+class BooksController < ApplicationController
+  def show
+    @book = Book.find(params[:id])
+    respond_to do |format|
+      format.html
+      format.json
+    end
+  end
+end
+```
+---
+## アクションにたいしてフックで処理を差し込む
+フック: アクションの前後に処理を差し込むことのできるコールバック処理のようなもの。フィルターとも呼ぶ。
+
+---
+### フック一覧
+| フック名 | 処理が実行されるタイミング |
+| ---- | ---- |
+| `before_action` | Actionの実行前 |
+| `after_action` | Actionの実行後 |
+| `around_action` | Actionの前後 |
+
+---
+## 例外処理
+ユーザに通知すべき例外処理などは基本的にコントローラが担当する。
+
+## StrongParameters
+### 脆弱性
+StrongParameters: Mass Assignment機能を利用する際に起こり得る脆弱性へ対抗する手段の1つ。
+
+Mass Assignment: モデルの生成や更新の際にRubyのハッシュを使って一括で属性を設定できる便利な仕組み。
+
+意図しない属性の変更を一派ニュー座に許してしまうことがある。
+### 対応策
+Mass Assignmentで利用しても良いHashのkeyを許可リストとして定義することで想定していないパラメータを利用しないように制限。
